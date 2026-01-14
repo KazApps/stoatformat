@@ -86,7 +86,7 @@ impl Bitboard {
 
     #[must_use]
     pub const fn multiple(self) -> bool {
-        (self.0 & (self.0 - 1)) != 0
+        (self.0 & (self.0.wrapping_sub(1))) != 0
     }
 
     #[must_use]
