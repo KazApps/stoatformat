@@ -12,6 +12,10 @@ pub struct StoatpackBase<M: ScoredMove> {
 pub trait ScoredMove: Sized {
     const SIZE: usize;
 
+    fn score(&self) -> i16;
+    fn static_eval(&self) -> Option<i16>;
+    fn mv(&self) -> Move;
+
     fn read(reader: &mut impl BufRead) -> Result<Option<Self>>;
     fn read_fast(reader: &mut impl BufRead, buffer: &mut Vec<u8>) -> Result<bool>;
 }
@@ -139,6 +143,18 @@ pub struct ScoredMove1 {
 impl ScoredMove for ScoredMove1 {
     const SIZE: usize = size_of::<u16>() + size_of::<i16>();
 
+    fn score(&self) -> i16 {
+        self.score
+    }
+
+    fn static_eval(&self) -> Option<i16> {
+        None
+    }
+
+    fn mv(&self) -> Move {
+        self.mv
+    }
+
     fn read(reader: &mut impl BufRead) -> Result<Option<Self>> {
         let raw = read_primitive!(reader, u16);
         let score = read_primitive!(reader, i16);
@@ -176,6 +192,18 @@ pub struct ScoredMove2 {
 
 impl ScoredMove for ScoredMove2 {
     const SIZE: usize = size_of::<u16>() + size_of::<i16>() * 2;
+
+    fn score(&self) -> i16 {
+        self.score
+    }
+
+    fn static_eval(&self) -> Option<i16> {
+        Some(self.static_eval)
+    }
+
+    fn mv(&self) -> Move {
+        self.mv
+    }
 
     fn read(reader: &mut impl BufRead) -> Result<Option<Self>> {
         let raw = read_primitive!(reader, u16);
