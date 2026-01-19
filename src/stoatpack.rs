@@ -1,14 +1,19 @@
 use crate::shogi::position::Position;
 use crate::shogi::shogimove::Move;
 use crate::{FastDeserialise, Outcome, ShogiBoard};
-use std::io::{BufRead, Error, ErrorKind};
+use std::io::{BufRead, Error, ErrorKind, Result};
 
-pub type ScoredMove = (Move, i16);
-
-pub struct Stoatpack {
+pub struct StoatpackBase<M: ScoredMove> {
     pub startpos: Position,
     pub wdl: Outcome,
-    pub moves: Vec<ScoredMove>,
+    pub moves: Vec<M>,
+}
+
+pub trait ScoredMove: Sized {
+    const SIZE: usize;
+
+    fn read(reader: &mut impl BufRead) -> Result<Option<Self>>;
+    fn read_fast(reader: &mut impl BufRead, buffer: &mut Vec<u8>) -> Result<bool>;
 }
 
 macro_rules! read_primitive {
@@ -28,7 +33,7 @@ macro_rules! read_primitive_into_vec {
     }};
 }
 
-impl Stoatpack {
+impl<M: ScoredMove> StoatpackBase<M> {
     #[must_use]
     pub fn new(startpos: Position) -> Self {
         Self {
@@ -38,7 +43,7 @@ impl Stoatpack {
         }
     }
 
-    pub fn deserialise(reader: &mut impl BufRead) -> std::io::Result<Self> {
+    pub fn deserialise(reader: &mut impl BufRead) -> Result<Self> {
         let wdl_type: u8 = read_primitive!(reader, u8);
 
         let wdl: Outcome = (wdl_type >> 6)
@@ -85,23 +90,8 @@ impl Stoatpack {
 
         let mut moves = Vec::new();
 
-        loop {
-            let raw_move = read_primitive!(reader, u16);
-            let score = read_primitive!(reader, i16);
-
-            if raw_move == 0 && score == 0 {
-                break;
-            }
-
-            if raw_move == 0 {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    "Encountered a scored nullmove",
-                ));
-            }
-
-            let mv = Move::from_raw(raw_move);
-            moves.push((mv, score));
+        while let Some(mv) = M::read(reader)? {
+            moves.push(mv);
         }
 
         Ok(Self {
@@ -112,11 +102,8 @@ impl Stoatpack {
     }
 }
 
-impl FastDeserialise for Stoatpack {
-    fn deserialise_fast_into_buffer(
-        reader: &mut impl BufRead,
-        buffer: &mut Vec<u8>,
-    ) -> std::io::Result<()> {
+impl<M: ScoredMove> FastDeserialise for StoatpackBase<M> {
+    fn deserialise_fast_into_buffer(reader: &mut impl BufRead, buffer: &mut Vec<u8>) -> Result<()> {
         let wdl_type = read_primitive_into_vec!(reader, buffer, u8);
 
         let startpos_type = wdl_type & 0b111111;
@@ -137,15 +124,89 @@ impl FastDeserialise for Stoatpack {
             let _ = read_primitive_into_vec!(reader, buffer, u16);
         }
 
-        loop {
-            let mv = read_primitive_into_vec!(reader, buffer, u16);
-            let _ = read_primitive_into_vec!(reader, buffer, i16);
-
-            if mv == 0 {
-                break;
-            }
-        }
+        while M::read_fast(reader, buffer)? {}
 
         Ok(())
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct ScoredMove1 {
+    pub mv: Move,
+    pub score: i16,
+}
+
+impl ScoredMove for ScoredMove1 {
+    const SIZE: usize = size_of::<u16>() + size_of::<i16>();
+
+    fn read(reader: &mut impl BufRead) -> Result<Option<Self>> {
+        let raw = read_primitive!(reader, u16);
+        let score = read_primitive!(reader, i16);
+
+        if raw == 0 {
+            if score == 0 {
+                Ok(None)
+            } else {
+                Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Encountered a scored nullmove",
+                ))
+            }
+        } else {
+            Ok(Some(Self {
+                mv: Move::from_raw(raw),
+                score,
+            }))
+        }
+    }
+
+    fn read_fast(reader: &mut impl BufRead, buffer: &mut Vec<u8>) -> Result<bool> {
+        let raw = read_primitive_into_vec!(reader, buffer, u16);
+        let _ = read_primitive_into_vec!(reader, buffer, i16);
+        Ok(raw != 0)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct ScoredMove2 {
+    pub mv: Move,
+    pub static_eval: i16,
+    pub score: i16,
+}
+
+impl ScoredMove for ScoredMove2 {
+    const SIZE: usize = size_of::<u16>() + size_of::<i16>() * 2;
+
+    fn read(reader: &mut impl BufRead) -> Result<Option<Self>> {
+        let raw = read_primitive!(reader, u16);
+        let static_eval = read_primitive!(reader, i16);
+        let score = read_primitive!(reader, i16);
+
+        if raw == 0 {
+            if static_eval == 0 && score == 0 {
+                Ok(None)
+            } else {
+                Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Encountered a scored nullmove",
+                ))
+            }
+        } else {
+            Ok(Some(Self {
+                mv: Move::from_raw(raw),
+                static_eval,
+                score,
+            }))
+        }
+    }
+
+    fn read_fast(reader: &mut impl BufRead, buffer: &mut Vec<u8>) -> Result<bool> {
+        let raw = read_primitive_into_vec!(reader, buffer, u16);
+        let _ = read_primitive_into_vec!(reader, buffer, i16);
+        let _ = read_primitive_into_vec!(reader, buffer, i16);
+        Ok(raw != 0)
+    }
+}
+
+pub type Stoatpack = StoatpackBase<ScoredMove1>;
+pub type Stoatpack2 = StoatpackBase<ScoredMove2>;
