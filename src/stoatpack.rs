@@ -206,9 +206,9 @@ impl ScoredMove for ScoredMove2 {
     }
 
     fn read(reader: &mut impl BufRead) -> Result<Option<Self>> {
-        let raw = read_primitive!(reader, u16);
-        let static_eval = read_primitive!(reader, i16);
         let score = read_primitive!(reader, i16);
+        let static_eval = read_primitive!(reader, i16);
+        let raw = read_primitive!(reader, u16);
 
         if raw == 0 {
             if static_eval == 0 && score == 0 {
@@ -229,9 +229,9 @@ impl ScoredMove for ScoredMove2 {
     }
 
     fn read_fast(reader: &mut impl BufRead, buffer: &mut Vec<u8>) -> Result<bool> {
+        let _ = read_primitive_into_vec!(reader, buffer, i16);
+        let _ = read_primitive_into_vec!(reader, buffer, i16);
         let raw = read_primitive_into_vec!(reader, buffer, u16);
-        let _ = read_primitive_into_vec!(reader, buffer, i16);
-        let _ = read_primitive_into_vec!(reader, buffer, i16);
         Ok(raw != 0)
     }
 }
